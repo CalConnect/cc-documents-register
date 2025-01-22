@@ -1,0 +1,88 @@
+name: deploy-main
+
+on:
+  schedule:
+    - cron: '42 */12 * * *'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '/docs/**'
+      - '.github/workflows/*'
+      - '!.github/workflows/deploy-main.yaml'
+  repository_dispatch:
+    types: [ deploy-main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # The same repo is mirrored to different GitHub repos.
+    # Deployment environments are distinguished by repositories.
+    # As such, web analytics ID such as var.GA_MEASUREMENT_ID should be
+    # provided at the appropriate repository.
+    if: github.repository == 'CalConnect/cc-documents-register'
+    name: Build site
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://register.calconnect.org
+    steps:
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.0'
+      - uses: actions/checkout@master
+      - name: Build
+        run: |
+          if [[ -n "${GA_MEASUREMENT_ID:-}" ]]
+          then
+            # Define the directory where the site-builder will look for the GA
+            # measurement ID
+            WEB_RESOURCES_DIR="${DATASET_NAME}"/_web/resources
+
+            # Where to write the Google Analytics measurement ID
+            GA_JSON_PATH="${WEB_RESOURCES_DIR}"/js/ga.json
+
+            # Make sure the directory exists
+            GA_JSON_DIR="${GA_JSON_PATH%/*}"
+            mkdir -p "${GA_JSON_DIR}"
+
+            echo "{\"gaMeasurementId\":\"${GA_MEASUREMENT_ID}\"}" > "${GA_JSON_PATH}"
+            echo >&2 "Inserting Google Analytics JS..."
+
+            # FIXME: Must specify --datadir *after* --injected-entries, or else
+            # it would complain about `Invalid subcommand for build - use 'watch'`
+            npx @paneron/site-builder@0.0.44 \
+              --outdir "${OUTDIR}" \
+              --injected-entries "${DATASET_NAME}"/_web/ga.js \
+              --injected-assets-dir "${WEB_RESOURCES_DIR}" \
+              --datadir "${DATASET_NAME}"
+          else
+            npx @paneron/site-builder@0.0.44 \
+              --outdir "${OUTDIR}" \
+              --datadir "${DATASET_NAME}"
+          fi
+        env:
+          GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
+          DATASET_NAME: documents
+          OUTDIR: dist
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    needs: build
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
