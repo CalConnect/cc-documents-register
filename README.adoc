@@ -1,0 +1,10 @@
+= CalConnect Documents Register
+
+The CalConnect Documents Register
+consists of a list of all documents published by CalConnect,
+including specifications and reports.
+
+
+== License
+
+See link:./LICENSE[`LICENSE`^] for license information.
